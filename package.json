@@ -1,0 +1,28 @@
+{
+  "name": "@serverless/aws-iam-policy",
+  "version": "0.0.1",
+  "main": "./serverless.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint . --fix --cache"
+  },
+  "author": "Serverless, Inc.",
+  "license": "MIT",
+  "dependencies": {
+    "@serverless/components": "^0.1.10",
+    "aws-sdk": "^2.424.0",
+    "ramda": "^0.26.0",
+    "shortid": "^2.2.14"
+  },
+  "devDependencies": {
+    "babel-eslint": "9.0.0",
+    "eslint": "5.6.0",
+    "eslint-config-prettier": "^3.6.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-prettier": "^3.0.1",
+    "prettier": "^1.15.3"
+  }
+}
