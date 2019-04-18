@@ -55,7 +55,7 @@ myRole:
         - Effect: Allow
           Action:
             - lambda:InvokeFunction
-          Resource: *
+          Resource: '*'
 ```
 
 ### 4. Deploy
