@@ -1,4 +1,4 @@
-# AWS IAM Policy
+# aws-iam-policy
 
 &nbsp;
 
