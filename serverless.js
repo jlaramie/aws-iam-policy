@@ -114,6 +114,7 @@ class AwsIamPolicy extends Component {
     }
 
     if (result && JSON.stringify(this.state.policy) !== inputs.policy) {
+      const oldVersionId = result.VersionId
       this.context.debug(`Creating new policy version ${inputs.name}`)
       // Create a new policy version
       if (inputs.policy) {
@@ -140,10 +141,10 @@ class AwsIamPolicy extends Component {
         }
       }
       // Delete oldest policy version
-      if (result.VersionId) {
+      if (oldVersionId) {
         const params = {
           PolicyArn: result.Arn,
-          VersionId: result.VersionId
+          VersionId: oldVersionId
         }
         try {
           await iam.deletePolicyVersion(params).promise()
