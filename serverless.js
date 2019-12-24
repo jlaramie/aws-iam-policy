@@ -1,7 +1,7 @@
-const { equals, mergeDeepRight } = require('ramda')
+const { mergeDeepRight } = require('ramda')
 const shortid = require('shortid')
 const aws = require('aws-sdk')
-const { Component } = require('@serverless/components')
+const { Component } = require('@serverless/core')
 
 /**
  * AwsIamPolicy
@@ -9,7 +9,6 @@ const { Component } = require('@serverless/components')
  */
 
 class AwsIamPolicy extends Component {
-
   /**
    * Default
    * @param  {Object}  [inputs={}] [description]
@@ -17,8 +16,7 @@ class AwsIamPolicy extends Component {
    */
 
   async default(inputs = {}) {
-
-    this.cli.status(`Deploying`)
+    this.context.status(`Deploying`)
 
     // Defaults
     const defaults = {}
@@ -28,33 +26,37 @@ class AwsIamPolicy extends Component {
       Statement: [
         {
           Effect: 'Allow',
-          Action: [ 'iam:GetPolicyVersion' ],
+          Action: ['iam:GetPolicyVersion'],
           Resource: '*'
         }
       ]
     }
     defaults.name = `policy-${shortid.generate()}`
     defaults.description = 'A policy created by Serverless Components'
-    defaults.path = null
+    defaults.path = '/'
 
     inputs = mergeDeepRight(defaults, inputs)
 
     // Ensure Document is a string
-    inputs.policy = typeof inputs.policy === 'string' ? inputs.policy : JSON.stringify(inputs.policy)
+    inputs.policy =
+      typeof inputs.policy === 'string' ? inputs.policy : JSON.stringify(inputs.policy)
 
-    const iam = new aws.IAM({ region: inputs.region, credentials: this.context.credentials.aws })
+    const iam = new aws.IAM({
+      region: inputs.region || this.context.region,
+      credentials: this.context.credentials.aws
+    })
 
     const params = {
       PolicyDocument: inputs.policy,
       PolicyName: inputs.name,
       Description: inputs.description,
-      Path: inputs.path,
+      Path: inputs.path
     }
 
     let result
     try {
       result = await iam.createPolicy(params).promise()
-    } catch(error) {
+    } catch (error) {
       throw new Error(error)
     }
 
@@ -67,7 +69,6 @@ class AwsIamPolicy extends Component {
     this.state.policy = outputs.policy = JSON.parse(inputs.policy)
     await this.save()
 
-    this.cli.outputs(outputs)
     return outputs
   }
 
@@ -78,7 +79,6 @@ class AwsIamPolicy extends Component {
    */
 
   async remove(inputs = {}) {
-
     if (!this.state.arn) return {}
 
     const iam = new aws.IAM({
