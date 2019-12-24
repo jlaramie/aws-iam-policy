@@ -1,4 +1,4 @@
-const { mergeDeepRight } = require('ramda')
+const { equals, mergeDeepRight, pick } = require('ramda')
 const shortid = require('shortid')
 const aws = require('aws-sdk')
 const { Component } = require('@serverless/core')
@@ -15,7 +15,7 @@ class AwsIamPolicy extends Component {
    * @return {Promise}             [description]
    */
 
-  async default(inputs = {}) {
+  async default(initialInputs = {}) {
     this.context.status(`Deploying`)
 
     // Defaults
@@ -35,38 +35,175 @@ class AwsIamPolicy extends Component {
     defaults.description = 'A policy created by Serverless Components'
     defaults.path = '/'
 
-    inputs = mergeDeepRight(defaults, inputs)
+    const inputs = mergeDeepRight(defaults, this.state, initialInputs)
 
     // Ensure Document is a string
     inputs.policy =
       typeof inputs.policy === 'string' ? inputs.policy : JSON.stringify(inputs.policy)
 
+    // Check if policy exists
     const iam = new aws.IAM({
       region: inputs.region || this.context.region,
       credentials: this.context.credentials.aws
     })
 
-    const params = {
-      PolicyDocument: inputs.policy,
-      PolicyName: inputs.name,
-      Description: inputs.description,
-      Path: inputs.path
+    // Do old policy cleanup
+    if (this.state.lastPolicyArn) {
+      const params = {
+        PolicyArn: this.state.lastPolicyArn
+      }
+
+      try {
+        this.context.debug(`Deleting old policy for ${inputs.name} ${params.PolicyArn}`)
+        await iam.deletePolicy(params).promise()
+      } catch (error) {
+        this.context.debug(`Could not delete old policy ${inputs.name} ${params.PolicyArn}`)
+        this.context.debug(error)
+        this.state.lastPolicyArn = undefined
+      }
     }
 
     let result
-    try {
-      result = await iam.createPolicy(params).promise()
-    } catch (error) {
-      throw new Error(error)
+    // If a new policy is required attempt to delete the old one
+    if (inputs.arn && initialInputs.name && initialInputs.name !== this.state.name) {
+      this.context.debug(`New policy required for ${inputs.name}`)
+
+      const params = {
+        PolicyArn: inputs.arn
+      }
+
+      try {
+        this.context.debug(`Deleting old policy for ${inputs.name} ${params.PolicyArn}`)
+        await iam.deletePolicy(params).promise()
+      } catch (error) {
+        this.context.debug(
+          `Could not delete old policy ${inputs.name} ${params.PolicyArn}. Old policy ${inputs.arn} will be attempted next run`
+        )
+        this.context.debug(error)
+        this.state.lastPolicyArn = this.state.arn
+      }
+
+      inputs.name = initialInputs.name
+      result = undefined
+    }
+    // Check policy and destroy it if changes are needed
+    else if (inputs.arn) {
+      try {
+        const params = {
+          PolicyArn: inputs.arn
+        }
+
+        const { Policy: policy } = await iam.getPolicy(params).promise()
+        const policyVersion = await iam
+          .getPolicyVersion({
+            ...params,
+            VersionId: policy.DefaultVersionId
+          })
+          .promise()
+
+        result = {
+          ...policyVersion,
+          ...policy,
+          Document: decodeURI(policyVersion.Document)
+        }
+      } catch (error) {
+        this.context.debug(`Could not fetch current policy ${inputs.name} ${inputs.arn}`)
+        this.context.debug(error)
+        result = undefined
+      }
+    }
+
+    if (result && JSON.stringify(this.state.policy) !== inputs.policy) {
+      // Create a new policy version
+      if (inputs.policy) {
+        const params = {
+          PolicyArn: result.Arn,
+          PolicyDocument: inputs.policy,
+          SetAsDefault: true
+        }
+
+        try {
+          const policyVersion = await iam
+            .createPolicyVersion(params)
+            .promise()
+            .then(({ PolicyVersion }) => PolicyVersion)
+
+          result = {
+            ...policyVersion,
+            ...result
+          }
+        } catch (error) {
+          this.context.debug(`Could not create policy ${inputs.name} - ${inputs.arn} version`)
+          this.context.debug(error)
+          result = undefined
+        }
+      }
+      // Delete oldest policy version
+      if (inputs.version) {
+        const params = {
+          PolicyArn: result.Arn,
+          VersionId: inputs.version
+        }
+        try {
+          await iam.deletePolicyVersion(params).promise()
+        } catch (error) {
+          this.context.debug(
+            `Could not delete policy ${params.PolicyArn} version ${params.VersionId}`
+          )
+          this.context.debug(error)
+        }
+      }
+    } else if (result) {
+      this.context.debug(`No policy changes required for ${inputs.name}`)
+    }
+
+    // Generate new policy
+    if (!result) {
+      this.context.log(`Creating new policy ${inputs.name}`)
+      const params = {
+        PolicyDocument: inputs.policy,
+        PolicyName: inputs.name,
+        Description: inputs.description,
+        Path: inputs.path
+      }
+
+      try {
+        result = await iam
+          .createPolicy(params)
+          .promise()
+          .then(({ Policy }) => Policy)
+      } catch (error) {
+        throw new Error(error)
+      }
     }
 
     // Save state and set outputs
-    const outputs = {}
-    this.state.name = outputs.name = result.Policy.PolicyName
-    this.state.id = outputs.id = result.Policy.PolicyId
-    this.state.arn = outputs.arn = result.Policy.Arn
-    this.state.version = outputs.version = 'v1'
-    this.state.policy = outputs.policy = JSON.parse(inputs.policy)
+    const {
+      PolicyName: name,
+      PolicyId: id,
+      Arn: arn,
+      VersionId: version = 'v1',
+      Path: path
+    } = result
+    const outputs = {
+      id,
+      name,
+      arn,
+      version,
+      policy: JSON.parse(inputs.policy),
+      path
+    }
+    this.state.id = id
+    this.state.name = name
+    this.state.arn = arn
+    this.state.path = path
+    this.state.version = version
+    this.state.policy = outputs.policy
+
+    if (this.state.lastPolicyArn) {
+      outputs.lastPolicyArn = this.state.lastPolicyArn
+    }
+
     await this.save()
 
     return outputs
@@ -99,7 +236,7 @@ class AwsIamPolicy extends Component {
 
     // Clear state
     this.state = {}
-    await this.save()
+    await this.save({})
 
     return {}
   }
