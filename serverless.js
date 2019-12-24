@@ -238,7 +238,7 @@ class AwsIamPolicy extends Component {
 
     // Clear state
     this.state = {}
-    await this.save({})
+    await this.save()
 
     return {}
   }
