@@ -35,7 +35,7 @@ class AwsIamPolicy extends Component {
     defaults.description = 'A policy created by Serverless Components'
     defaults.path = '/'
 
-    const inputs = mergeDeepRight(defaults, this.state, initialInputs)
+    const inputs = mergeDeepRight(this.state, mergeDeepRight(defaults, initialInputs))
 
     // Ensure Document is a string
     inputs.policy =
@@ -114,6 +114,7 @@ class AwsIamPolicy extends Component {
     }
 
     if (result && JSON.stringify(this.state.policy) !== inputs.policy) {
+      this.context.debug(`Creating new policy version ${inputs.name}`)
       // Create a new policy version
       if (inputs.policy) {
         const params = {
@@ -139,10 +140,10 @@ class AwsIamPolicy extends Component {
         }
       }
       // Delete oldest policy version
-      if (inputs.version) {
+      if (result.VersionId) {
         const params = {
           PolicyArn: result.Arn,
-          VersionId: inputs.version
+          VersionId: result.VersionId
         }
         try {
           await iam.deletePolicyVersion(params).promise()
@@ -153,8 +154,6 @@ class AwsIamPolicy extends Component {
           this.context.debug(error)
         }
       }
-    } else if (result) {
-      this.context.debug(`No policy changes required for ${inputs.name}`)
     }
 
     // Generate new policy
@@ -175,6 +174,8 @@ class AwsIamPolicy extends Component {
       } catch (error) {
         throw new Error(error)
       }
+    } else {
+      this.context.debug(`No policy changes required for ${inputs.name}`)
     }
 
     // Save state and set outputs
