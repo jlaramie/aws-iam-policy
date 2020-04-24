@@ -229,16 +229,16 @@ class AwsIamPolicy extends Component {
       PolicyArn: this.state.arn
     }
 
-    let result
     try {
-      result = await iam.deletePolicy(params).promise()
+      const result = await iam.deletePolicy(params).promise()
+      // Clear state
+      this.state = {}
+      await this.save()
     } catch (error) {
-      if (!error.message.includes('does not exist')) throw new Error(error)
+      if (error.message.includes('Cannot delete a policy attached to entities')) {
+        console.error(`Policy ${this.state.arn} cannot be deleted automatically.`)
+      } else if (!error.message.includes('does not exist')) throw new Error(error)
     }
-
-    // Clear state
-    this.state = {}
-    await this.save()
 
     return {}
   }
